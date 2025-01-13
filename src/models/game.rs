@@ -1,3 +1,4 @@
+use std::cmp::PartialEq;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use crate::models::card::{Card, Rank, Suit};
@@ -9,8 +10,25 @@ pub enum GameError {
     InvalidTurn,
     InvalidCard,
     InvalidMove,
-    GameFinished,
+    CardNotFound,
+    NoGameFound,
 }
+
+pub enum GameStatus {
+    InProgress,
+    Ended
+}
+pub struct EndPhaseResponse {
+    pub status: Option<GameStatus>,
+    pub next_turn: u8
+}
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub enum GamePhase {
+    GameEnded,
+    P1,
+    P2,
+}
+
 
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -19,27 +37,100 @@ pub struct Game {
     pub players: Vec<Player>,
     pub deck: Vec<Card>,
     pub current_turn: usize,
+    phase: GamePhase,
 }
 
 impl Game {
     pub fn new( players_uuid: Vec<Uuid>) -> Game {
+
+        let mut deck = Self::create_deck();
+        let players: Vec<Player> = players_uuid.iter().map(|&uuid| {
+            let mut hand = vec![];
+            for _ in 0..4 {
+                if let Some(card) = deck.pop() {
+                    hand.push(card);
+                } else {
+                    panic!("Invalid configuration!");
+                }
+            }
+            Player {
+                id: uuid,
+                hand,
+                bin: vec![],
+            }
+        }).collect();
+
         Game {
             id: Uuid::new_v4(),
-            players: players_uuid.iter().map(|&uuid| {
-                Player {
-                    id: uuid,
-                    hand: vec![],
-                    bin: vec![],
-                }
-            }).collect(),
-            deck: Self::create_deck(),
+            players,
+            deck,
             current_turn: 0,
+            phase: GamePhase::P1,
         }
     }
 
+    pub fn close(&mut self, player_uuid: Uuid, card: Card) -> Result<EndPhaseResponse, GameError> {
+        if self.players[self.current_turn].id != player_uuid || self.phase == GamePhase::P2 {
+            return Err(GameError::InvalidMove);
+        }
+
+        if let Err(GameError::CardNotFound) = self.remove_card(&card) {
+            return Err(GameError::CardNotFound);
+        }
+
+        self.current_turn = (self.current_turn + 1) % self.players.len();
+
+        self.phase = GamePhase::GameEnded;
+        Ok(EndPhaseResponse {
+            next_turn: self.current_turn as u8,
+            status: Some(GameStatus::Ended)
+        })
+    }
+
+    pub fn discard(&mut self, player_uuid: Uuid, card: Card) -> Result<EndPhaseResponse, GameError> {
+        if self.players[self.current_turn].id != player_uuid || self.phase == GamePhase::P2 {
+            return Err(GameError::InvalidMove);
+        }
+
+        if let Err(GameError::CardNotFound) = self.remove_card(&card) {
+            return Err(GameError::CardNotFound);
+        }
+
+        self.current_turn = (self.current_turn + 1) % self.players.len();
+
+        if self.deck.len() > 0 {
+            self.phase = GamePhase::P1;
+            self.players[self.current_turn].hand.push(card);
+            Ok(EndPhaseResponse {
+                next_turn: self.current_turn as u8,
+                status: Some(GameStatus::InProgress)
+            })
+        } else {
+            self.phase = GamePhase::GameEnded;
+            Ok(EndPhaseResponse {
+                next_turn: self.current_turn as u8,
+                status: Some(GameStatus::Ended)
+            })
+        }
+    }
+    pub fn take_bin(&mut self, player_uuid: Uuid) -> Result<Ok, GameError> {
+        if self.players[self.current_turn].id != player_uuid || self.phase == GamePhase::P1 {
+            return Err(GameError::InvalidMove);
+        }
+
+        let card = match self.players[self.current_turn].bin.pop() {
+            Some(card) => card,
+            None => return Err(GameError::InvalidMove),
+        };
+
+        self.players[self.current_turn].hand.push(card);
+        self.phase = GamePhase::P2;
+        Ok(())
+    }
+
     pub fn draw(&mut self, player_uuid: Uuid) -> Result<Ok, GameError>  {
-        if self.players[self.current_turn].id != player_uuid {
-            return Err(GameError::InvalidPlayer);
+        if self.players[self.current_turn].id != player_uuid || self.phase != GamePhase::P1  {
+            return Err(GameError::InvalidMove);
         }
 
         let card = match self.deck.pop() {
@@ -49,11 +140,22 @@ impl Game {
 
         if let Some(current_player) = self.players.get_mut(self.current_turn) {
             current_player.hand.push(card);
+            self.phase = GamePhase::P2;
             Ok(())
         } else {
             self.deck.push(card);
             Err(GameError::InvalidTurn)
         }
+    }
+
+    fn remove_card(&mut self, card: &Card) -> Result<Ok, GameError> {
+        let index = match self.players[self.current_turn].hand.iter().position(|&c| c == *card) {
+            Some(i) => i,
+            None => return Err(GameError::CardNotFound)
+        };
+
+        self.players[self.current_turn].hand.remove(index);
+        Ok(())
     }
 
     fn create_deck() -> Vec<Card> {
