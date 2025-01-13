@@ -1,4 +1,4 @@
-use std::cmp::PartialEq;
+use std::cmp::{max, PartialEq};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use crate::models::card::{Card, Rank, Suit};
@@ -20,7 +20,8 @@ pub enum GameStatus {
 }
 pub struct EndPhaseResponse {
     pub status: Option<GameStatus>,
-    pub next_turn: u8
+    pub next_turn: u8,
+    pub winner: Option<Player>
 }
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum GamePhase {
@@ -83,7 +84,8 @@ impl Game {
         self.phase = GamePhase::GameEnded;
         Ok(EndPhaseResponse {
             next_turn: self.current_turn as u8,
-            status: Some(GameStatus::Ended)
+            status: Some(GameStatus::Ended),
+            winner: None,
         })
     }
 
@@ -103,17 +105,19 @@ impl Game {
             self.players[self.current_turn].hand.push(card);
             Ok(EndPhaseResponse {
                 next_turn: self.current_turn as u8,
-                status: Some(GameStatus::InProgress)
+                status: Some(GameStatus::InProgress),
+                winner: None,
             })
         } else {
             self.phase = GamePhase::GameEnded;
             Ok(EndPhaseResponse {
                 next_turn: self.current_turn as u8,
-                status: Some(GameStatus::Ended)
+                status: Some(GameStatus::Ended),
+                winner: None,
             })
         }
     }
-    pub fn take_bin(&mut self, player_uuid: Uuid) -> Result<Ok, GameError> {
+    pub fn take_bin(&mut self, player_uuid: Uuid) -> Result<(), GameError> {
         if self.players[self.current_turn].id != player_uuid || self.phase == GamePhase::P1 {
             return Err(GameError::InvalidMove);
         }
@@ -128,7 +132,7 @@ impl Game {
         Ok(())
     }
 
-    pub fn draw(&mut self, player_uuid: Uuid) -> Result<Ok, GameError>  {
+    pub fn draw(&mut self, player_uuid: Uuid) -> Result<(), GameError>  {
         if self.players[self.current_turn].id != player_uuid || self.phase != GamePhase::P1  {
             return Err(GameError::InvalidMove);
         }
@@ -148,8 +152,33 @@ impl Game {
         }
     }
 
-    fn remove_card(&mut self, card: &Card) -> Result<Ok, GameError> {
-        let index = match self.players[self.current_turn].hand.iter().position(|&c| c == *card) {
+    pub fn score(&self, player_uuid: Uuid) -> Result<u16, GameError> {
+        let index = match self.players.iter().position(|c| c.id == player_uuid) {
+            Some(i) => i,
+            None => return Err(GameError::InvalidPlayer)
+        };
+
+        Ok(self.players[index].score())
+    }
+    pub fn winner(&self) -> Option<Player> {
+        if self.phase != GamePhase::GameEnded {
+            return None;
+        }
+        let mut winner = None;
+        let mut max_score = 0;
+        for player in &self.players {
+            let score = player.score();
+            if max_score < score {
+                winner = Some(player.clone());
+                max_score = score;
+            }
+        }
+
+        winner
+    }
+
+    fn remove_card(&mut self, card: &Card) -> Result<(), GameError> {
+        let index = match self.players[self.current_turn].hand.iter().position(|c| c == card) {
             Some(i) => i,
             None => return Err(GameError::CardNotFound)
         };
@@ -183,6 +212,27 @@ pub struct Player {
     pub id: Uuid,
     pub hand: Vec<Card>,
     pub bin: Vec<Card>,
+}
+
+impl Player {
+    pub fn score(&self) -> u16 {
+
+        let mut points:[u16;4] = [0, 0, 0, 0];
+        let mut max_point:u16 = 0;
+        for i in 0..4 {
+            let point = self.hand[i].points();
+            let ip = match self.hand[i].suit {
+                Suit::Hearts => {0},
+                Suit::Diamonds => {1},
+                Suit::Clubs => {2},
+                Suit::Spades => {3},
+            };
+            points[ip] += point;
+            max_point = max(max_point, point);
+        }
+
+        (max_point*2) - points.iter().sum::<u16>()
+    }
 }
 
 
