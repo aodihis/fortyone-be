@@ -85,7 +85,7 @@ impl Game {
         Ok(EndPhaseResponse {
             next_turn: self.current_turn as u8,
             status: Some(GameStatus::Ended),
-            winner: None,
+            winner: self.winner()       ,
         })
     }
 
@@ -113,7 +113,7 @@ impl Game {
             Ok(EndPhaseResponse {
                 next_turn: self.current_turn as u8,
                 status: Some(GameStatus::Ended),
-                winner: None,
+                winner: self.winner(),
             })
         }
     }
@@ -171,6 +171,8 @@ impl Game {
             if max_score < score {
                 winner = Some(player.clone());
                 max_score = score;
+            } else if score == max_score {
+                winner = None
             }
         }
 
