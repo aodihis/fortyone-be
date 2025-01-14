@@ -35,17 +35,24 @@ pub async fn create_game(State(state): State<Arc<RwLock<GameManager>>>) -> Resul
 pub async fn game(ws: WebSocketUpgrade, Path(game_id): Path<String>, State(state): State<Arc<RwLock<GameManager>>>) -> impl IntoResponse {
     {
         let game_manager = state.read().await;
-        let game_id = Uuid::parse_str(&game_id).unwrap();
+        let game_id = {
+            match Uuid::parse_str(&game_id) {
+                Ok(id) => id,
+                Err(_) => {
+                    return Err((StatusCode::BAD_REQUEST, "Invalid game ID").into_response())
+                }
+            }
+        };
         if !game_manager.games.contains_key(&game_id) {
-            return Err((StatusCode::BAD_REQUEST, "Game not found."));
+            return Err((StatusCode::BAD_REQUEST, "Game not found.").into_response());
         }
 
         if game_manager.games[&game_id].num_player >= MAX_PLAYER {
-            return Err((StatusCode::BAD_REQUEST, "Max player has been reached."));
+            return Err((StatusCode::BAD_REQUEST, "Max player has been reached.").into_response());
         }
 
         if game_manager.games[&game_id].status != GameStateStatus::Lobby {
-            return Err((StatusCode::BAD_REQUEST, "Game already started."));
+            return Err((StatusCode::BAD_REQUEST, "Game already started.").into_response());
         }
     }
     Ok(ws.on_upgrade(move |socket| handle_game_connection(socket, state)))
