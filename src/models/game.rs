@@ -23,7 +23,7 @@ pub struct EndPhaseResponse {
     pub next_turn: u8,
     pub winner: Option<Player>
 }
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub enum GamePhase {
     GameEnded,
     P1,
@@ -32,7 +32,7 @@ pub enum GamePhase {
 
 
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Game {
     pub id: Uuid,
     pub players: Vec<Player>,
