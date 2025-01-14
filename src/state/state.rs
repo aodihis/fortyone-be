@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use serde::Serialize;
 use uuid::Uuid;
 
+#[derive(Clone, Debug, Serialize, PartialEq)]
 pub enum GameStateStatus {
     Lobby,
     InProgress,
@@ -11,15 +12,16 @@ pub enum GameStateStatus {
 }
 #[derive(Clone, Serialize)]
 pub struct GameState {
-    id: Uuid,
-    num_player: u8,
-    game: Option<Game>,
-    date_created: DateTime<Utc>,
-    last_updated: DateTime<Utc>,
+    pub id: Uuid,
+    pub num_player: u8,
+    pub status: GameStateStatus,
+    pub game: Option<Game>,
+    pub date_created: DateTime<Utc>,
+    pub last_updated: DateTime<Utc>,
 }
 
 pub struct GameManager {
-    games: HashMap<Uuid, GameState>,
+    pub games: HashMap<Uuid, GameState>,
 }
 
 impl GameManager {
