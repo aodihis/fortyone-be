@@ -35,6 +35,7 @@ impl GameManager {
         let game = GameState {
             id: Uuid::new_v4(),
             num_player: 0,
+            status: GameStateStatus::Lobby,
             game: None,
             date_created: Utc::now(),
             last_updated: Utc::now(),
