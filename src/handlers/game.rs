@@ -23,7 +23,6 @@ struct JoinGameRequest {
 
 pub async fn create_game(State(state): State<Arc<RwLock<GameManager>>>) -> Result<Json<GameState>, GameError>{
     let game = state.write().await.create_game();
-    println!("Created game");
     Ok(Json(game))
 }
 
