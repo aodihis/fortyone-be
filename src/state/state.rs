@@ -1,7 +1,7 @@
 use crate::models::game::Game;
 use chrono::{DateTime, Utc};
-use std::collections::HashMap;
 use serde::Serialize;
+use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -18,6 +18,7 @@ pub struct GameState {
     pub game: Option<Game>,
     pub date_created: DateTime<Utc>,
     pub last_updated: DateTime<Utc>,
+    pub players: HashMap<Uuid, (String)>,
 }
 
 pub struct GameManager {
@@ -39,6 +40,7 @@ impl GameManager {
             game: None,
             date_created: Utc::now(),
             last_updated: Utc::now(),
+            players: HashMap::new(),
         };
         self.games.insert(game.id, game.clone());
         game

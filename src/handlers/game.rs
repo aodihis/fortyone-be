@@ -1,4 +1,5 @@
 use std::cmp::PartialEq;
+use std::collections::HashMap;
 use axum::debug_handler;
 use crate::handlers::error::GameError;
 use crate::state::state::{GameManager, GameState, GameStateStatus};
@@ -10,6 +11,7 @@ use axum::{
 };
 use serde::Deserialize;
 use std::sync::Arc;
+use axum::extract::Query;
 use axum::http::StatusCode;
 use tokio::sync::{Mutex, RwLock};
 use uuid::{uuid, Uuid};
@@ -32,7 +34,9 @@ pub async fn create_game(State(state): State<Arc<RwLock<GameManager>>>) -> Resul
 
 
 #[debug_handler]
-pub async fn game(ws: WebSocketUpgrade, Path(game_id): Path<String>, State(state): State<Arc<RwLock<GameManager>>>) -> impl IntoResponse {
+pub async fn game(ws: WebSocketUpgrade, Path(game_id): Path<String>, Query(params): Query<HashMap<String, String>>, State(state): State<Arc<RwLock<GameManager>>>) -> impl IntoResponse {
+
+    
     {
         let game_manager = state.read().await;
         let game_id = {
@@ -47,12 +51,26 @@ pub async fn game(ws: WebSocketUpgrade, Path(game_id): Path<String>, State(state
             return Err((StatusCode::BAD_REQUEST, "Game not found.").into_response());
         }
 
-        if game_manager.games[&game_id].num_player >= MAX_PLAYER {
+        if game_manager.games[&game_id].players.len() >= MAX_PLAYER {
             return Err((StatusCode::BAD_REQUEST, "Max player has been reached.").into_response());
         }
 
         if game_manager.games[&game_id].status != GameStateStatus::Lobby {
             return Err((StatusCode::BAD_REQUEST, "Game already started.").into_response());
+        }
+        
+        let mut game_manager = state.write().await;
+        let name = {
+            match params.get("player_name") {
+                Some(name) => name.to_string(),
+                None => {format!("Player {}",game_manager.games[&game_id].players.len() )}
+            }
+        };
+
+        if let Some(game) = game_manager.games.get_mut(&game_id) {
+            game.players.insert(Uuid::new_v4(), name);
+        } else {
+            eprintln!("Game with ID {} not found", game_id);
         }
     }
     Ok(ws.on_upgrade(move |socket| handle_game_connection(socket, state)))

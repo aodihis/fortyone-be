@@ -5,7 +5,7 @@ use crate::models::card::{Card, Rank, Suit};
 use rand::rng;
 use rand::seq::SliceRandom;
 
-pub const MAX_PLAYER : u8 = 4;
+pub const MAX_PLAYER : usize = 4;
 pub enum GameError {
     InvalidPlayer,
     InvalidTurn,
