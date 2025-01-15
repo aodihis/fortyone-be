@@ -6,7 +6,7 @@ use dotenvy::dotenv;
 use tokio::sync::RwLock;
 use crate::config::Config;
 
-mod models;
+mod engine;
 mod state;
 mod handlers;
 mod routes;

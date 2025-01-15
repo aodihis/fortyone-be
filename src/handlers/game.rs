@@ -15,7 +15,7 @@ use axum::extract::Query;
 use axum::http::StatusCode;
 use tokio::sync::{Mutex, RwLock};
 use uuid::{uuid, Uuid};
-use crate::models::game::MAX_PLAYER;
+use crate::engine::game::MAX_PLAYER;
 
 #[derive(Debug, Deserialize)]
 struct CreateGameRequest {

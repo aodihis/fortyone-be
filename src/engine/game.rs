@@ -1,11 +1,13 @@
 use std::cmp::{max, PartialEq};
+use axum::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use crate::models::card::{Card, Rank, Suit};
+use crate::engine::card::{Card, Rank, Suit};
 use rand::rng;
 use rand::seq::SliceRandom;
 
 pub const MAX_PLAYER : usize = 4;
+#[derive(Debug)]
 pub enum GameError {
     InvalidPlayer,
     InvalidTurn,
@@ -15,6 +17,7 @@ pub enum GameError {
     NoGameFound,
 }
 
+#[derive(PartialEq)]
 pub enum GameStatus {
     InProgress,
     Ended
@@ -72,6 +75,7 @@ impl Game {
     }
 
     pub fn close(&mut self, player_uuid: Uuid, card: Card) -> Result<EndPhaseResponse, GameError> {
+        // println!("close");
         if self.players[self.current_turn].id != player_uuid || self.phase == GamePhase::P2 {
             return Err(GameError::InvalidMove);
         }
@@ -91,7 +95,9 @@ impl Game {
     }
 
     pub fn discard(&mut self, player_uuid: Uuid, card: Card) -> Result<EndPhaseResponse, GameError> {
-        if self.players[self.current_turn].id != player_uuid || self.phase == GamePhase::P2 {
+        // println!("discard: {}", self.current_turn);
+        if self.players[self.current_turn].id != player_uuid || self.phase != GamePhase::P2 {
+            // println!("{:?}, {}, {:?}", self.players[self.current_turn].id, player_uuid, self.phase);
             return Err(GameError::InvalidMove);
         }
 
@@ -119,7 +125,8 @@ impl Game {
         }
     }
     pub fn take_bin(&mut self, player_uuid: Uuid) -> Result<(), GameError> {
-        if self.players[self.current_turn].id != player_uuid || self.phase == GamePhase::P1 {
+        // println!("Taking bin: {:?}", self.deck);
+        if self.players[self.current_turn].id != player_uuid || self.phase != GamePhase::P1 {
             return Err(GameError::InvalidMove);
         }
 
@@ -134,6 +141,7 @@ impl Game {
     }
 
     pub fn draw(&mut self, player_uuid: Uuid) -> Result<(), GameError>  {
+        // println!("Draw {}", self.current_turn);
         if self.players[self.current_turn].id != player_uuid || self.phase != GamePhase::P1  {
             return Err(GameError::InvalidMove);
         }
@@ -153,7 +161,7 @@ impl Game {
         }
     }
 
-    pub fn score(&self, player_uuid: Uuid) -> Result<u16, GameError> {
+    pub fn score(&self, player_uuid: Uuid) -> Result<i16, GameError> {
         let index = match self.players.iter().position(|c| c.id == player_uuid) {
             Some(i) => i,
             None => return Err(GameError::InvalidPlayer)
@@ -178,6 +186,10 @@ impl Game {
         }
 
         winner
+    }
+
+    pub fn current_turn(&self) -> Player {
+        self.players[self.current_turn].clone()
     }
 
     fn remove_card(&mut self, card: &Card) -> Result<(), GameError> {
@@ -218,7 +230,7 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn score(&self) -> u16 {
+    pub fn score(&self) -> i16 {
 
         let mut points:[u16;4] = [0, 0, 0, 0];
         let mut max_point:u16 = 0;
@@ -233,8 +245,8 @@ impl Player {
             points[ip] += point;
             max_point = max(max_point, point);
         }
-
-        (max_point*2) - points.iter().sum::<u16>()
+        // println!("max point: {}, sum: {}", max_point, points.iter().sum::<u16>());
+        ((max_point as i16) *2) - points.iter().sum::<u16>() as i16
     }
 }
 

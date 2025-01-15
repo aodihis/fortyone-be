@@ -1,4 +1,4 @@
-use crate::models::game::Game;
+use crate::engine::game::Game;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::collections::HashMap;
