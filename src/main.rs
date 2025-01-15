@@ -24,6 +24,6 @@ async fn main() {
 
     let game_state = Arc::new(RwLock::new(GameManager::new()));
     let router = create_router(game_state);
-
+    println!("Listening on {}", addr);
     axum::Server::bind(&addr).serve(router.into_make_service()).await.unwrap();
 }

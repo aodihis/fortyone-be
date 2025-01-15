@@ -10,7 +10,7 @@ pub enum GameStateStatus {
     InProgress,
     Finished,
 }
-#[derive(Clone, Serialize)]
+#[derive(Clone)]
 pub struct GameState {
     pub id: Uuid,
     pub num_player: u8,
@@ -18,7 +18,7 @@ pub struct GameState {
     pub game: Option<Game>,
     pub date_created: DateTime<Utc>,
     pub last_updated: DateTime<Utc>,
-    pub players: HashMap<Uuid, (String)>,
+    pub players: HashMap<Uuid, (String,tokio::sync::mpsc::UnboundedSender<axum::extract::ws::Message>)>,
 }
 
 pub struct GameManager {
