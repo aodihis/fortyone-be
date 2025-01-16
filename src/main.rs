@@ -1,10 +1,9 @@
+use crate::config::Config;
 use crate::routes::game::create_router;
 use crate::state::state::GameManager;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use dotenvy::dotenv;
 use tokio::sync::RwLock;
-use crate::config::Config;
 
 mod engine;
 mod state;

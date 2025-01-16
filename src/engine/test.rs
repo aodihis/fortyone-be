@@ -1,8 +1,8 @@
 #[cfg(test)]
 #[allow(warnings)]
 mod tests {
+    use crate::engine::game::{Game, GameStatus};
     use uuid::Uuid;
-    use crate::engine::game::{EndPhaseResponse, Game, GameError, GameStatus};
 
     fn test_create_game() {
         let game = Game::new(vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()]);
@@ -17,12 +17,12 @@ mod tests {
         let mut game = Game::new(vec![player1_id.clone(), player2_id.clone()]);
         let mut i = 0;
         loop {
-            let current_player = game.current_turn();
+            let current_player = game.current_player();
             println!("Drawing phase pa");
             let res_p1 = match i {
-                i if i%2 == 1 && current_player.bin.len() > 0 => game.take_bin(current_player.id),
-                i if i%2 == 0 => game.draw(current_player.id),
-                _ => game.draw(current_player.id)
+                i if i%2 == 1 && current_player.bin.len() > 0 => game.take_bin(&current_player.id),
+                i if i%2 == 0 => game.draw(&current_player.id),
+                _ => game.draw(&current_player.id)
             };
 
 
@@ -33,7 +33,7 @@ mod tests {
 
             println!("Discard phase");
             let card_to_discard = current_player.hand[3].clone();
-            let res_p2 = game.discard(current_player.id, card_to_discard);
+            let res_p2 = game.discard(&current_player.id, card_to_discard);
 
             let p2 =match res_p2 {
                 Ok(p2) => p2,
