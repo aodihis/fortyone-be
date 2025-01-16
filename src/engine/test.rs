@@ -3,10 +3,22 @@
 mod tests {
     use crate::engine::game::{Game, GameStatus};
     use uuid::Uuid;
+    use crate::engine::card::{Card, Rank, Suit};
 
     fn test_create_game() {
         let game = Game::new(vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()]);
         println!("Created game: {:?}", game);
+    }
+
+    #[test]
+    fn test_card() {
+        let card = match Card::from_string("H2") {
+            None => {panic!("Unable initiate card")}
+            Some(card) => {card}
+        };
+
+        assert_eq!(card.to_string(), "H2");
+        assert_eq!(card.points(),2);
     }
 
 

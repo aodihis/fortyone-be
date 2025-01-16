@@ -6,16 +6,16 @@ use std::cmp::{max, PartialEq};
 use uuid::Uuid;
 
 pub const MAX_PLAYER : usize = 4;
+
 #[derive(Debug)]
 pub enum GameError {
     InvalidPlayer,
     InvalidTurn,
-    InvalidCard,
     InvalidMove,
     CardNotFound,
-    NoGameFound,
 }
 
+#[allow(dead_code)]
 #[derive(PartialEq)]
 pub enum GameStatus {
     InProgress,
@@ -74,7 +74,6 @@ impl Game {
     }
 
     pub fn close(&mut self, player_uuid: &Uuid, card: Card) -> Result<EndPhaseResponse, GameError> {
-        // println!("close");
         if self.players[self.current_turn].id != *player_uuid || self.phase == GamePhase::P2 {
             return Err(GameError::InvalidMove);
         }
@@ -168,6 +167,7 @@ impl Game {
 
         Ok(self.players[index].score())
     }
+
     pub fn winner(&self) -> Option<Player> {
         if self.phase != GamePhase::GameEnded {
             return None;
@@ -238,7 +238,8 @@ impl Player {
         let mut points:[u16;4] = [0, 0, 0, 0];
         let mut max_point:u16 = 0;
         for i in 0..4 {
-            let point = self.hand[i].points();
+            let card = self.hand.get(i).unwrap();
+            let point = card.points();
             let ip = match self.hand[i].suit {
                 Suit::Hearts => {0},
                 Suit::Diamonds => {1},

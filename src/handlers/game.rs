@@ -16,10 +16,6 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-#[derive(Debug, Deserialize)]
-struct CreateGameRequest {
-    player_name: String,
-}
 
 #[derive(Debug, Serialize)]
 pub struct CreateGameResponse {
@@ -144,7 +140,7 @@ async fn handle_game_connection(mut socket: WebSocket, state: Arc<RwLock<GameMan
                     Err(_) => {}
                 }
             }
-            (_) => {}
+            _ => {}
         }
     }
 }

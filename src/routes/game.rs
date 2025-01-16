@@ -1,6 +1,6 @@
 use crate::handlers::game::{create_game, game};
 use crate::state::state::GameManager;
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::Router;
 use std::sync::Arc;
 use tokio::sync::RwLock;
