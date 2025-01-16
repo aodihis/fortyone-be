@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::collections::HashMap;
 use uuid::Uuid;
+use crate::utils::generate_short_uuid;
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 pub enum GameStateStatus {
@@ -12,7 +13,7 @@ pub enum GameStateStatus {
 }
 #[derive(Clone)]
 pub struct GameState {
-    pub id: Uuid,
+    pub id: String,
     pub num_player: u8,
     pub status: GameStateStatus,
     pub game: Option<Game>,
@@ -22,7 +23,7 @@ pub struct GameState {
 }
 
 pub struct GameManager {
-    pub games: HashMap<Uuid, GameState>,
+    pub games: HashMap<String, GameState>,
 }
 
 impl GameManager {
@@ -34,7 +35,7 @@ impl GameManager {
 
     pub fn create_game(&mut self) -> GameState {
         let game = GameState {
-            id: Uuid::new_v4(),
+            id: generate_short_uuid(),
             num_player: 0,
             status: GameStateStatus::Lobby,
             game: None,
@@ -42,7 +43,7 @@ impl GameManager {
             last_updated: Utc::now(),
             players: HashMap::new(),
         };
-        self.games.insert(game.id, game.clone());
+        self.games.insert(game.id.clone(), game.clone());
         game
     }
 }

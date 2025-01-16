@@ -130,6 +130,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "base62"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd7b59bff88ba4b88c8fcf3ff1bd2129326710263041e4d6ca015fc89ce7c14c"
+
+[[package]]
 name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -292,8 +298,10 @@ name = "fortyone-be"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base62",
  "chrono",
  "dotenvy",
+ "futures-util",
  "rand 0.9.0-beta.1",
  "serde",
  "serde_json",

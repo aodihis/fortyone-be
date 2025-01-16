@@ -159,6 +159,18 @@ impl Game {
         }
     }
 
+    pub fn remove_player(&mut self, player_uuid: &Uuid) -> Result<(), GameError> {
+        if let Some(index) = self.players.iter().position(|c| c.id == *player_uuid) {
+            if self.current_turn == index {
+                self.phase = GamePhase::P2;
+                self.discard(player_uuid, self.players[index].hand[0].clone())?;
+            }
+            self.players.remove(index);
+        }
+
+        Ok(())
+    }
+
     pub fn score(&self, player_uuid: &Uuid) -> Result<i16, GameError> {
         let index = match self.players.iter().position(|c| c.id == *player_uuid) {
             Some(i) => i,

@@ -1,6 +1,6 @@
 use crate::engine::game::{Game, MAX_PLAYER};
 use crate::handlers::error::GameError;
-use crate::state::state::{GameManager, GameStateStatus};
+use crate::state::state::{GameManager, GameState, GameStateStatus};
 use axum::debug_handler;
 use axum::extract::Query;
 use axum::http::StatusCode;
@@ -13,13 +13,16 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use futures_util::stream::SplitStream;
+use futures_util::{SinkExt, StreamExt};
 use tokio::sync::RwLock;
+use tracing_subscriber::fmt::format;
 use uuid::Uuid;
 
 
 #[derive(Debug, Serialize)]
 pub struct CreateGameResponse {
-    game_id: Uuid,
+    game_id: String,
     num_of_players: usize,
 }
 
@@ -50,6 +53,7 @@ struct GameData {
     current_turn: u8,
     current_phase: String,
     event: GameEvent,
+    message_type: String,
     players: Vec<PlayerData>,
 
 }
@@ -79,63 +83,75 @@ pub async fn create_game(State(state): State<Arc<RwLock<GameManager>>>) -> Resul
 #[debug_handler]
 pub async fn game(ws: WebSocketUpgrade, Path(game_id): Path<String>, Query(params): Query<HashMap<String, String>>, State(state): State<Arc<RwLock<GameManager>>>) -> impl IntoResponse {
 
-    println!("Game join");
-
-    let game_uuid = {
-        match Uuid::parse_str(&game_id) {
-            Ok(id) => id,
-            Err(_) => {
-                return Err((StatusCode::BAD_REQUEST, "Invalid game ID").into_response())
-            }
-        }
-    };
-
     let player_id = Uuid::new_v4();
+    let mut player_name = "Player".to_string();
     {
         let mut game_manager = state.write().await;
 
-        if !game_manager.games.contains_key(&game_uuid) {
+        if !game_manager.games.contains_key(&game_id) {
             return Err((StatusCode::BAD_REQUEST, "Game not found.").into_response());
         }
 
-        if game_manager.games[&game_uuid].players.len() >= MAX_PLAYER {
+        if game_manager.games[&game_id].players.len() >= MAX_PLAYER {
             return Err((StatusCode::BAD_REQUEST, "Max player has been reached.").into_response());
         }
 
-        if game_manager.games[&game_uuid].status != GameStateStatus::Lobby {
+        if game_manager.games[&game_id].status != GameStateStatus::Lobby {
             return Err((StatusCode::BAD_REQUEST, "Game already started.").into_response());
         }
 
-        let name = {
+         player_name = {
             match params.get("player_name") {
                 Some(name) => name.to_string(),
-                None => {format!("Player {}",game_manager.games[&game_uuid].players.len() )}
+                None => {format!("Player {}",game_manager.games[&game_id].players.len() )}
             }
         };
 
-        let (tx, _) = tokio::sync::mpsc::unbounded_channel();
-
-        if let Some(game) = game_manager.games.get_mut(&game_uuid) {
-            game.players.insert(player_id.clone(), (name, tx));
-        } else {
-            eprintln!("Game with ID {} not found", game_uuid);
+        if game_manager.games.get(&game_id).is_none() {
+            eprintln!("Game with ID {} not found", game_id);
         }
     }
-    println!("Game created");
-    Ok(ws.on_upgrade(move |socket| handle_game_connection(socket, state, player_id, game_uuid)))
+    Ok(ws.on_upgrade(move |socket| handle_game_connection(socket, state, player_id,player_name, game_id)))
 }
 
 
-async fn handle_game_connection(mut socket: WebSocket, state: Arc<RwLock<GameManager>>, player_id: Uuid, game_id: Uuid) {
+async fn handle_game_connection(mut socket: WebSocket, state: Arc<RwLock<GameManager>>, player_id: Uuid, player_name: String, game_id: String) {
 
 
-    while let Some(Ok(message)) = socket.recv().await {
+    let (mut sender, mut receiver) = socket.split();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+
+    let mut send_task = tokio::spawn(async move {
+       while let Some(message) = rx.recv().await {
+           if sender.send(message).await.is_err() {
+               continue;
+           }
+       }
+    });
+
+    {
+        let mut write_state = state.write().await;
+        let mut game_state = write_state.games.get_mut(&game_id).unwrap();
+        let join_message = format!("{} joined game", player_name);
+        let join_json = serde_json::json!({
+                "status": "success",
+                "message_type": "player_join",
+                "message": join_message,
+            });
+        broadcast_message(join_json.to_string(), game_state).await;
+
+
+        game_state.players.insert(player_id, (player_name.clone(), tx));
+    }
+
+    while let Some(Ok(message)) = receiver.next().await {
 
         match message {
             Message::Text(msg) => {
                 match serde_json::from_str::<GameRequest>(&msg) {
                     Ok(data) => {
-                        handle_game_data(&mut socket, &state, player_id, game_id, Json::from(data)).await;
+                        println!("{:?}", data);
+                        handle_game_data(&mut receiver, &state, player_id, &game_id, Json::from(data)).await;
                     }
                     Err(_) => {}
                 }
@@ -143,23 +159,52 @@ async fn handle_game_connection(mut socket: WebSocket, state: Arc<RwLock<GameMan
             _ => {}
         }
     }
+
+    {
+        let mut write_state = state.write().await;
+        if let Some(game_state) = write_state.games.get_mut(&game_id) {
+            game_state.players.remove(&player_id);
+            if let Some(game) = &mut game_state.game {
+                game.remove_player(&player_id).unwrap();
+            }
+            let leave_message = format!("{} left game", player_name);
+            let leave_json = serde_json::json!({
+                "status": "success",
+                "message_type": "player_left",
+                "message": leave_message,
+            });
+            broadcast_message(leave_json.to_string(), game_state).await;
+        }
+    }
+
+    send_task.abort();
 }
 
-async fn handle_game_data(socket: &mut WebSocket, state: &Arc<RwLock<GameManager>>, player_id: Uuid, game_id : Uuid, data: Json<GameRequest>) -> impl IntoResponse {
+async fn broadcast_message(message: String, game_state: &mut GameState) {
+    println!("broadcasting message: {}", message);
+    for (_, (name, tx)) in game_state.players.iter() {
+        println!("{}", name);
+        if let Err(e) = tx.send(Message::Text(message.clone())) {
+            eprintln!("Error sending message: {:?}", e.to_string());
+        }
+    }
+}
+async fn handle_game_data(rx: &mut SplitStream<WebSocket>, state: &Arc<RwLock<GameManager>>, player_id: Uuid, game_id : &String, data: Json<GameRequest>) -> impl IntoResponse {
     let mut write_state = state.write().await;
-    let game_state = write_state.games.get_mut(&game_id).unwrap();
+    let game_state = write_state.games.get_mut(game_id).unwrap();
     let game_res: &Option<Game> = &game_state.game;
     let action = data.action.as_str();
 
+    println!("json data: {:?}", data);
     if action == "start_game" {
         match game_res {
             None => {
-                let game = Game::new(game_state.players.keys().cloned().collect());
+                let player_list = game_state.players.keys().cloned().collect();
+                println!("Player list: {:?}", player_list);
+                let game = Game::new(player_list);
                 game_state.status = GameStateStatus::InProgress;
-
                 for (id, (_name, con)) in game_state.players.iter() {
-
-                    let player_pos = match game.player_pos(&player_id){
+                    let player_pos = match game.player_pos(&id){
                         None => {panic!("Player {} not found", id)}
                         Some(i) => {i as u8}
                     };
@@ -172,21 +217,20 @@ async fn handle_game_data(socket: &mut WebSocket, state: &Arc<RwLock<GameManager
 
                     let mut players = vec![];
 
-                    for i in [player_pos, 0, 1, 2, 3] {
-                        if i >= game.players.len() as u8 {
-                            break
-                        }
-                        if i == player_pos {
-                            continue;
-                        }
-                        let id = game.players[i as usize].id;
-                        let (name,_) = game_state.players.get(&id).unwrap();
+                    for i in 0..game.players.len() {
+                        let p_id = game.players[i].id;
+                        let (name,_) = game_state.players.get(&p_id).unwrap();
                         players.push(PlayerData {
                             name: name.to_string(),
                             hand: {
-                                game.players[i as usize].hand.iter().map(|card| card.to_string()).collect()
+                                if p_id  == *id {
+                                    game.players[i].hand.iter().map(|card| card.to_string()).collect()
+                                } else {
+                                    vec!["".to_string();4]
+                                }
+
                             },
-                            bin: vec![],
+                            bin: game.players[i].bin.iter().map(|card| card.to_string()).collect(),
                         })
                     }
 
@@ -196,10 +240,11 @@ async fn handle_game_data(socket: &mut WebSocket, state: &Arc<RwLock<GameManager
                         current_turn: game.current_turn as u8,
                         current_phase: "".to_string(),
                         event: game_event,
+                        message_type: "game_event".to_string(),
                         players,
                     };
                     let msg = GameMessage{
-                        player_id,
+                        player_id: id.clone(),
                         status: "success".to_string(),
                         player_pos,
                         data: Some(game_data),
@@ -213,7 +258,8 @@ async fn handle_game_data(socket: &mut WebSocket, state: &Arc<RwLock<GameManager
             }
             Some(_game) => {
                 let res = GameResponse{ status: "failed".to_string() };
-                if let Err(e) = socket.send(Message::Text(serde_json::to_string(&res).unwrap())).await {
+                let (_, rx) = game_state.players.get_mut(&player_id).unwrap();
+                if let Err(e) = rx.send(Message::Text(serde_json::to_string(&res).unwrap())) {
                     eprintln!("Error sending message: {:?}", e);
                 }
             }
