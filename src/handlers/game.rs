@@ -1,4 +1,4 @@
-use crate::engine::game::{Game, MAX_PLAYER};
+use crate::engine::game::{Game, GamePhase, MAX_PLAYER};
 use crate::handlers::error::GameError;
 use crate::state::state::{GameManager, GameState, GameStateStatus};
 use axum::debug_handler;
@@ -286,7 +286,11 @@ fn broadcast_game_message(game_state: &mut GameState, game_event: GameEvent) {
             let game_data =  GameData{
                 num_of_players: game_state.players.len() as u8,
                 current_turn: game.current_turn as u8,
-                current_phase: "".to_string(),
+                current_phase: match game.phase {
+                    GamePhase::GameEnded => {"ended"}
+                    GamePhase::P1 => {"p1"}
+                    GamePhase::P2 => {"p2"}
+                }.to_string(),
                 event: game_event.clone(),
                 message_type: "game_event".to_string(),
                 players,

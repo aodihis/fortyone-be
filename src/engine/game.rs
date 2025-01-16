@@ -41,7 +41,7 @@ pub struct Game {
     pub players: Vec<Player>,
     pub deck: Vec<Card>,
     pub current_turn: usize,
-    phase: GamePhase,
+    pub phase: GamePhase,
 }
 
 impl Game {
