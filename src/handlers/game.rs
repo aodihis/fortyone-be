@@ -191,7 +191,7 @@ async fn broadcast_message(message: String, game_state: &mut GameState) {
 async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, game_id : &String, data: Json<GameRequest>) {
     let mut write_state = state.write().await;
     let game_state: &mut GameState = write_state.games.get_mut(game_id).unwrap();
-    let mut game_res: &Option<Game> = &game_state.game;
+    let mut game_res: &mut Option<Game> = &mut game_state.game;
     let action: &str = data.action.as_str();
 
     println!("json data: {:?}", data);
@@ -258,52 +258,58 @@ fn send_failed_message(game_state: &mut GameState, player_id: &Uuid) {
 fn broadcast_game_message(game_state: &mut GameState, game_event: GameEvent) {
         let game = game_state.game.as_ref().unwrap();
         for (id, (_name, con)) in game_state.players.iter() {
-            let player_pos = match game.player_pos(&id){
-                None => {panic!("Player {} not found", id)}
-                Some(i) => {i as u8}
-            };
-
-            let mut players = vec![];
-
-            for i in 0..game.players.len() {
-                let p_id = game.players[i].id;
-                let (name,_) = game_state.players.get(&p_id).unwrap();
-                players.push(PlayerData {
-                    name: name.to_string(),
-                    hand: {
-                        if p_id  == *id {
-                            game.players[i].hand.iter().map(|card| card.to_string()).collect()
-                        } else {
-                            vec!["".to_string();4]
-                        }
-
-                    },
-                    bin: game.players[i].bin.iter().map(|card| card.to_string()).collect(),
-                })
-            }
-
-
-            let game_data =  GameData{
-                num_of_players: game_state.players.len() as u8,
-                current_turn: game.current_turn as u8,
-                current_phase: match game.phase {
-                    GamePhase::GameEnded => {"ended"}
-                    GamePhase::P1 => {"p1"}
-                    GamePhase::P2 => {"p2"}
-                }.to_string(),
-                event: game_event.clone(),
-                message_type: "game_event".to_string(),
-                players,
-            };
-            let msg = GameMessage{
-                player_id: id.clone(),
-                status: "success".to_string(),
-                player_pos,
-                data: Some(game_data),
-            };
+            let msg = build_game_message(id, game, game_state, game_event.clone());
 
             if let Err(e) = con.send(Message::Text(serde_json::to_string(&msg).unwrap())) {
                 eprintln!("Error sending message: {:?}", e);
             }
         }
+}
+
+fn build_game_message(id: &Uuid, game: &Game, game_state: &GameState, game_event: GameEvent) -> GameMessage {
+    let player_pos = match game.player_pos(&id){
+        None => {panic!("Player {} not found", id)}
+        Some(i) => {i as u8}
+    };
+
+    let mut players = vec![];
+
+    for i in 0..game.players.len() {
+        let p_id = game.players[i].id;
+        let (name,_) = game_state.players.get(&p_id).unwrap();
+        players.push(PlayerData {
+            name: name.to_string(),
+            hand: {
+                if p_id  == *id {
+                    game.players[i].hand.iter().map(|card| card.to_string()).collect()
+                } else {
+                    vec!["".to_string();4]
+                }
+
+            },
+            bin: game.players[i].bin.iter().map(|card| card.to_string()).collect(),
+        })
+    }
+
+
+    let game_data =  GameData{
+        num_of_players: game_state.players.len() as u8,
+        current_turn: game.current_turn as u8,
+        current_phase: match game.phase {
+            GamePhase::GameEnded => {"ended"}
+            GamePhase::P1 => {"p1"}
+            GamePhase::P2 => {"p2"}
+        }.to_string(),
+        event: game_event,
+        message_type: "game_event".to_string(),
+        players,
+    };
+    let msg = GameMessage{
+        player_id: id.clone(),
+        status: "success".to_string(),
+        player_pos,
+        data: Some(game_data),
+    };
+
+    msg
 }
