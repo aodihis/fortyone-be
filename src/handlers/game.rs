@@ -1,7 +1,7 @@
+use crate::engine::card::Card;
 use crate::engine::game::{Game, GamePhase, MAX_PLAYER};
 use crate::handlers::error::GameError;
 use crate::state::state::{GameManager, GameState, GameStateStatus};
-use axum::debug_handler;
 use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::{
@@ -10,14 +10,12 @@ use axum::{
     ,
     Json,
 };
-use futures_util::stream::SplitStream;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use crate::engine::card::Card;
 
 #[derive(Debug, Serialize)]
 pub struct CreateGameResponse {
@@ -79,7 +77,6 @@ pub async fn create_game(State(state): State<Arc<RwLock<GameManager>>>) -> Resul
 }
 
 
-#[debug_handler]
 pub async fn game(ws: WebSocketUpgrade, Path(game_id): Path<String>, Query(params): Query<HashMap<String, String>>, State(state): State<Arc<RwLock<GameManager>>>) -> impl IntoResponse {
 
     let player_id = Uuid::new_v4();
@@ -149,7 +146,6 @@ async fn handle_game_connection(mut socket: WebSocket, state: Arc<RwLock<GameMan
             Message::Text(msg) => {
                 match serde_json::from_str::<GameRequest>(&msg) {
                     Ok(data) => {
-                        println!("{:?}", data);
                         handle_game_data(&state, player_id, &game_id, Json::from(data)).await;
                     }
                     Err(_) => {}
@@ -182,7 +178,6 @@ async fn handle_game_connection(mut socket: WebSocket, state: Arc<RwLock<GameMan
 async fn broadcast_message(message: String, game_state: &mut GameState) {
     println!("broadcasting message: {}", message);
     for (_, (name, tx)) in game_state.players.iter() {
-        println!("{}", name);
         if let Err(e) = tx.send(Message::Text(message.clone())) {
             eprintln!("Error sending message: {:?}", e.to_string());
         }
@@ -264,16 +259,19 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
             };
             let card = {
                 match Card::from_string(card_data) {
-                    Ok(card) => card,
-                    Err(_) => {send_failed_message(game_state, &player_id);}
+                    Some(card) => card,
+                    _ => {
+                        send_failed_message(game_state, &player_id);
+                        return;
+                    }
                 }
             };
             match game.discard(&player_id, card) {
                 Ok(_) => {
                     let game_event = GameEvent {
-                        event_type: "take_bin".to_string(),
+                        event_type: "discard".to_string(),
                         from: Option::from(player_pos as u8),
-                        to: Option::from(player_pos as u8),
+                        to: Option::from(game.current_turn as u8),
                     };
                     broadcast_game_message(game_state, game_event);
                 }
