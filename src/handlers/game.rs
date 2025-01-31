@@ -47,6 +47,7 @@ struct GameMessage {
 #[derive(Debug, Serialize, Deserialize)]
 struct GameData {
     num_of_players: u8,
+    card_left: u8,
     current_turn: u8,
     current_phase: String,
     event: GameEvent,
@@ -177,7 +178,7 @@ async fn handle_game_connection(mut socket: WebSocket, state: Arc<RwLock<GameMan
 
 async fn broadcast_message(message: String, game_state: &mut GameState) {
     println!("broadcasting message: {}", message);
-    for (_, (name, tx)) in game_state.players.iter() {
+    for (_, (_name, tx)) in game_state.players.iter() {
         if let Err(e) = tx.send(Message::Text(message.clone())) {
             eprintln!("Error sending message: {:?}", e.to_string());
         }
@@ -329,6 +330,7 @@ fn build_game_message(id: &Uuid, game: &Game, game_state: &GameState, game_event
 
     let game_data =  GameData{
         num_of_players: game_state.players.len() as u8,
+        card_left: game.card_left(),
         current_turn: game.current_turn as u8,
         current_phase: match game.phase {
             GamePhase::GameEnded => {"ended"}

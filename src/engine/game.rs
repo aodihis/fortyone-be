@@ -207,6 +207,10 @@ impl Game {
         self.players.iter().position(|c| c.id == *player_uuid)
     }
 
+    pub fn card_left(&self) -> u8 {
+        self.deck.len() as u8
+    }
+
     fn remove_card(&mut self, card: &Card) -> Result<(), GameError> {
         let index = match self.players[self.current_turn].hand.iter().position(|c| c == card) {
             Some(i) => i,
