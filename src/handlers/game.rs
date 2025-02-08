@@ -1,3 +1,4 @@
+use std::cmp::PartialEq;
 use crate::engine::card::Card;
 use crate::engine::game::{Game, GamePhase, MAX_PLAYER};
 use crate::handlers::error::GameError;
@@ -28,9 +29,19 @@ struct JoinGameRequest {
     player_name: String,
 }
 
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum GameRequestAction {
+    StartGame,
+    Draw,
+    TakeBin,
+    Discard,
+}
+
+
 #[derive(Debug, Deserialize)]
 struct GameRequest  {
-    action: String,
+    action: GameRequestAction,
     card: Option<String>,
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -62,8 +73,17 @@ struct PlayerData {
     bin: Vec<String>,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
+enum GameEventType {
+    GameStart,
+    Draw,
+    TakeBin,
+    Discard
+
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct GameEvent {
-    event_type: String,
+    event_type: GameEventType,
     from: Option<u8>,
     to: Option<u8>,
 }
@@ -184,13 +204,13 @@ async fn broadcast_message(message: String, game_state: &mut GameState) {
         }
     }
 }
+
 async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, game_id : &String, data: Json<GameRequest>) {
     let mut write_state = state.write().await;
     let game_state: &mut GameState = write_state.games.get_mut(game_id).unwrap();
     let mut game_res: &mut Option<Game> = &mut game_state.game;
-    let action: &str = data.action.as_str();
 
-    if action == "start_game" {
+    if data.action == GameRequestAction::StartGame {
         match game_res {
             None => {
                 let player_list = game_state.players.keys().cloned().collect();
@@ -198,7 +218,7 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
                 game_state.game = Some(game);
                 game_state.status = GameStateStatus::InProgress;
                 let game_event = GameEvent {
-                    event_type: "game_start".to_string(),
+                    event_type: GameEventType::GameStart,
                     from: None,
                     to: None,
                 };
@@ -222,13 +242,12 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
     };
     let mut game = game_res.as_mut().unwrap();
     let player_pos = game.player_pos(&player_id).unwrap();
-    let action = data.action.as_str();
-    match action {
-        "draw" => {
+    match data.action {
+        GameRequestAction::Draw => {
             match game.draw(&player_id) {
                 Ok(_) => {
                     let game_event = GameEvent {
-                        event_type: "draw".to_string(),
+                        event_type: GameEventType::Draw,
                         from: None,
                         to: Option::from(player_pos as u8),
                     };
@@ -237,11 +256,11 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
                 Err(_) => {send_failed_message(game_state, &player_id);}
             }
         },
-        "take_bin" => {
+        GameRequestAction::TakeBin => {
             match game.take_bin(&player_id) {
                 Ok(_) => {
                     let game_event = GameEvent {
-                        event_type: "take_bin".to_string(),
+                        event_type: GameEventType::TakeBin,
                         from: Option::from(player_pos as u8),
                         to: Option::from(player_pos as u8),
                     };
@@ -250,7 +269,7 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
                 Err(_) => {send_failed_message(game_state, &player_id);}
             }
         },
-        "discard" => {
+        GameRequestAction::Discard => {
             let card_data = match &data.card {
                 Some(card_data) => card_data,
                 None => {
@@ -270,7 +289,7 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
             match game.discard(&player_id, card) {
                 Ok(_) => {
                     let game_event = GameEvent {
-                        event_type: "discard".to_string(),
+                        event_type: GameEventType::Discard,
                         from: Option::from(player_pos as u8),
                         to: Option::from(game.current_turn as u8),
                     };
