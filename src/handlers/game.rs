@@ -44,21 +44,31 @@ struct GameRequest  {
 struct GameResponse {
     status: String,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum MessageType {
+    PlayerJoin,
+    PlayerLeft,
+    GameEvent,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 struct GameMessage {
-    player_id: Uuid,
+    message_type: MessageType,
     status: String,
-    player_pos: u8,
-    data: Option<GameData>
+    data: Option<GameData>,
+    message: Option<String>
 }
 #[derive(Debug, Serialize, Deserialize)]
 struct GameData {
+    player_id: Uuid,
+    player_pos: u8,
     num_of_players: u8,
     card_left: u8,
     current_turn: u8,
     current_phase: String,
     event: GameEvent,
-    message_type: String,
     players: Vec<PlayerData>,
 
 }
@@ -147,12 +157,13 @@ async fn handle_game_connection(socket: WebSocket, state: Arc<RwLock<GameManager
         let mut write_state = state.write().await;
         let game_state = write_state.games.get_mut(&game_id).unwrap();
         let join_message = format!("{} joined game", player_name);
-        let join_json = serde_json::json!({
-                "status": "success",
-                "message_type": "player_join",
-                "message": join_message,
-            });
-        broadcast_message(join_json.to_string(), game_state).await;
+        let join_json = GameMessage {
+            message_type: MessageType::PlayerJoin,
+            status: "success".to_string(),
+            data: None,
+            message: Some(join_message),
+        };
+        broadcast_message(serde_json::to_string(&join_json).unwrap().to_string(), game_state).await;
 
 
         game_state.players.insert(player_id, (player_name.clone(), tx));
@@ -183,12 +194,13 @@ async fn handle_game_connection(socket: WebSocket, state: Arc<RwLock<GameManager
                 game.remove_player(&player_id).unwrap();
             }
             let leave_message = format!("{} left game", player_name);
-            let leave_json = serde_json::json!({
-                "status": "success",
-                "message_type": "player_left",
-                "message": leave_message,
-            });
-            broadcast_message(leave_json.to_string(), game_state).await;
+            let leave_json = GameMessage {
+                message_type: MessageType::PlayerLeft,
+                status: "success".to_string(),
+                data: None,
+                message: Some(leave_message),
+            };
+            broadcast_message(serde_json::to_string(&leave_json).unwrap().to_string(), game_state).await;
         }
     }
 
@@ -377,6 +389,8 @@ fn build_game_message(id: &Uuid, game: &Game, game_state: &GameState, game_event
 
 
     let game_data =  GameData{
+        player_id: id.clone(),
+        player_pos,
         num_of_players: game_state.players.len() as u8,
         card_left: game.card_left(),
         current_turn: game.current_turn as u8,
@@ -386,13 +400,12 @@ fn build_game_message(id: &Uuid, game: &Game, game_state: &GameState, game_event
             GamePhase::P2 => {"p2"}
         }.to_string(),
         event: game_event,
-        message_type: "game_event".to_string(),
         players,
     };
     let msg = GameMessage{
-        player_id: id.clone(),
+        message_type: MessageType::GameEvent,
         status: "success".to_string(),
-        player_pos,
+        message: None,
         data: Some(game_data),
     };
 
