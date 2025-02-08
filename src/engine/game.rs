@@ -107,7 +107,7 @@ impl Game {
 
         if self.deck.len() > 0 {
             self.phase = GamePhase::P1;
-            self.players[self.current_turn].hand.push(card);
+            self.players[self.current_turn].bin.push(card);
             Ok(EndPhaseResponse {
                 next_turn: self.current_turn as u8,
                 status: Some(GameStatus::InProgress),
