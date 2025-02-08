@@ -1,6 +1,6 @@
 use std::cmp::PartialEq;
 use crate::engine::card::Card;
-use crate::engine::game::{Game, GamePhase, MAX_PLAYER};
+use crate::engine::game::{EndPhaseResponse, Game, GamePhase, MAX_PLAYER};
 use crate::handlers::error::GameError;
 use crate::state::state::{GameManager, GameState, GameStateStatus};
 use axum::extract::Query;
@@ -24,11 +24,6 @@ pub struct CreateGameResponse {
     num_of_players: usize,
 }
 
-#[derive(Debug, Deserialize)]
-struct JoinGameRequest {
-    player_name: String,
-}
-
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "snake_case")]
 enum GameRequestAction {
@@ -36,6 +31,7 @@ enum GameRequestAction {
     Draw,
     TakeBin,
     Discard,
+    Close,
 }
 
 
@@ -78,7 +74,8 @@ enum GameEventType {
     GameStart,
     Draw,
     TakeBin,
-    Discard
+    Discard,
+    Close,
 
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -103,7 +100,7 @@ pub async fn game(ws: WebSocketUpgrade, Path(game_id): Path<String>, Query(param
     let player_id = Uuid::new_v4();
     let mut player_name = "Player".to_string();
     {
-        let mut game_manager = state.write().await;
+        let game_manager = state.write().await;
 
         if !game_manager.games.contains_key(&game_id) {
             return Err((StatusCode::BAD_REQUEST, "Game not found.").into_response());
@@ -132,13 +129,13 @@ pub async fn game(ws: WebSocketUpgrade, Path(game_id): Path<String>, Query(param
 }
 
 
-async fn handle_game_connection(mut socket: WebSocket, state: Arc<RwLock<GameManager>>, player_id: Uuid, player_name: String, game_id: String) {
+async fn handle_game_connection(socket: WebSocket, state: Arc<RwLock<GameManager>>, player_id: Uuid, player_name: String, game_id: String) {
 
 
     let (mut sender, mut receiver) = socket.split();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
 
-    let mut send_task = tokio::spawn(async move {
+    let send_task = tokio::spawn(async move {
        while let Some(message) = rx.recv().await {
            if sender.send(message).await.is_err() {
                continue;
@@ -148,7 +145,7 @@ async fn handle_game_connection(mut socket: WebSocket, state: Arc<RwLock<GameMan
 
     {
         let mut write_state = state.write().await;
-        let mut game_state = write_state.games.get_mut(&game_id).unwrap();
+        let game_state = write_state.games.get_mut(&game_id).unwrap();
         let join_message = format!("{} joined game", player_name);
         let join_json = serde_json::json!({
                 "status": "success",
@@ -171,6 +168,8 @@ async fn handle_game_connection(mut socket: WebSocket, state: Arc<RwLock<GameMan
                     }
                     Err(_) => {}
                 }
+            },
+            Message::Close(_) => {
             }
             _ => {}
         }
@@ -208,7 +207,7 @@ async fn broadcast_message(message: String, game_state: &mut GameState) {
 async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, game_id : &String, data: Json<GameRequest>) {
     let mut write_state = state.write().await;
     let game_state: &mut GameState = write_state.games.get_mut(game_id).unwrap();
-    let mut game_res: &mut Option<Game> = &mut game_state.game;
+    let game_res: &mut Option<Game> = &mut game_state.game;
 
     if data.action == GameRequestAction::StartGame {
         match game_res {
@@ -240,7 +239,7 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
         send_failed_message(game_state, &player_id);
         return;
     };
-    let mut game = game_res.as_mut().unwrap();
+    let game = game_res.as_mut().unwrap();
     let player_pos = game.player_pos(&player_id).unwrap();
     match data.action {
         GameRequestAction::Draw => {
@@ -290,6 +289,36 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
                 Ok(_) => {
                     let game_event = GameEvent {
                         event_type: GameEventType::Discard,
+                        from: Option::from(player_pos as u8),
+                        to: Option::from(game.current_turn as u8),
+                    };
+                    broadcast_game_message(game_state, game_event);
+                }
+                Err(_) => {send_failed_message(game_state, &player_id);}
+            }
+        },
+        GameRequestAction::Close => {
+            let card_data = match &data.card {
+                Some(card_data) => card_data,
+                None => {
+                    send_failed_message(game_state, &player_id);
+                    return;
+                }
+            };
+            let card = {
+                match Card::from_string(card_data) {
+                    Some(card) => card,
+                    _ => {
+                        send_failed_message(game_state, &player_id);
+                        return;
+                    }
+                }
+            };
+
+            match game.close(&player_id, card) {
+                Ok(_) => {
+                    let game_event = GameEvent {
+                        event_type: GameEventType::Close,
                         from: Option::from(player_pos as u8),
                         to: Option::from(game.current_turn as u8),
                     };

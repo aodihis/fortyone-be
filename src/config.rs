@@ -14,6 +14,7 @@ impl Config {
         dotenv().ok();
 
         let server_address = env::var("SERVER_ADDRESS").expect("SERVER_ADDRESS is not set");
+        // let allowed_origin = env::var("ALLOWED_ORIGIN").unwrap_or_else(|_| "".to_string());
 
         Self { server_address }
     }

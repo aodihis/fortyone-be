@@ -17,6 +17,7 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let config = Config::from_env();
+
     let addr: SocketAddr = config
         .server_address
         .parse()
