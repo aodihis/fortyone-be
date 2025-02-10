@@ -1,7 +1,7 @@
 use axum::http::StatusCode;
 use thiserror::Error;
 
-
+#[allow(dead_code)]
 #[derive(Error, Debug)]
 pub enum GameError {
     #[error("Game not found")]

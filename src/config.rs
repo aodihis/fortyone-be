@@ -1,7 +1,5 @@
-
 use dotenvy::dotenv;
 use std::env;
-use std::env::VarError;
 
 #[derive(Debug)]
 pub struct Config {

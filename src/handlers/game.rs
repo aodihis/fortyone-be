@@ -1,6 +1,5 @@
-use std::cmp::PartialEq;
 use crate::engine::card::Card;
-use crate::engine::game::{EndPhaseResponse, Game, GamePhase, MAX_PLAYER};
+use crate::engine::game::{Game, GamePhase, MAX_PLAYER};
 use crate::handlers::error::GameError;
 use crate::state::state::{GameManager, GameState, GameStateStatus};
 use axum::extract::Query;
@@ -13,6 +12,7 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::cmp::PartialEq;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -46,11 +46,24 @@ struct GameResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+struct EndGameData {
+    winner_name: Option<String>,
+    scores: Vec<i16>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct EndGameMessage {
+    status: String,
+    message_type: MessageType,
+    data: EndGameData
+}
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum MessageType {
     PlayerJoin,
     PlayerLeft,
     GameEvent,
+    EndGame,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -108,7 +121,7 @@ pub async fn create_game(State(state): State<Arc<RwLock<GameManager>>>) -> Resul
 pub async fn game(ws: WebSocketUpgrade, Path(game_id): Path<String>, Query(params): Query<HashMap<String, String>>, State(state): State<Arc<RwLock<GameManager>>>) -> impl IntoResponse {
 
     let player_id = Uuid::new_v4();
-    let mut player_name = "Player".to_string();
+    let player_name: String;
     {
         let game_manager = state.write().await;
 
@@ -299,12 +312,23 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
             };
             match game.discard(&player_id, card) {
                 Ok(_) => {
-                    let game_event = GameEvent {
-                        event_type: GameEventType::Discard,
-                        from: Option::from(player_pos as u8),
-                        to: Option::from(game.current_turn as u8),
-                    };
-                    broadcast_game_message(game_state, game_event);
+                    if game.phase == GamePhase::GameEnded {
+                        let game_event = GameEvent {
+                            event_type: GameEventType::Close,
+                            from: Option::from(player_pos as u8),
+                            to: Option::from(game.current_turn as u8),
+                        };
+                        broadcast_game_message(game_state, game_event);
+                        game_state.status = GameStateStatus::Finished;
+                        broadcast_end_game_message(game_state);
+                    } else {
+                        let game_event = GameEvent {
+                            event_type: GameEventType::Discard,
+                            from: Option::from(player_pos as u8),
+                            to: Option::from(game.current_turn as u8),
+                        };
+                        broadcast_game_message(game_state, game_event);
+                    }
                 }
                 Err(_) => {send_failed_message(game_state, &player_id);}
             }
@@ -335,6 +359,8 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
                         to: Option::from(game.current_turn as u8),
                     };
                     broadcast_game_message(game_state, game_event);
+                    game_state.status = GameStateStatus::Finished;
+                    broadcast_end_game_message(game_state);
                 }
                 Err(_) => {send_failed_message(game_state, &player_id);}
             }
@@ -350,6 +376,32 @@ fn send_failed_message(game_state: &mut GameState, player_id: &Uuid) {
     if let Err(e) = rx.send(Message::Text(serde_json::to_string(&res).unwrap().into())) {
         eprintln!("Error sending message: {:?}", e);
     }
+}
+
+fn broadcast_end_game_message(game_state: &mut GameState) {
+    let game = game_state.game.as_ref().unwrap();
+    let scores = game.scores();
+    let winner = game.winner();
+    let msg = EndGameMessage {
+        status: "success".to_string(),
+        message_type: MessageType::EndGame,
+        data: EndGameData {
+            winner_name: if let Some(winner) = winner {
+                let name = game_state.players[&winner.id].0.clone();
+                Some(name)
+            }else {
+                None
+            },
+            scores,
+        },
+    };
+
+    for (_, (_name, con)) in game_state.players.iter() {
+        if let Err(e) = con.send(Message::Text(serde_json::to_string(&msg).unwrap().into())) {
+            eprintln!("Error sending message: {:?}", e);
+        }
+    }
+
 }
 fn broadcast_game_message(game_state: &mut GameState, game_event: GameEvent) {
         let game = game_state.game.as_ref().unwrap();
@@ -402,6 +454,7 @@ fn build_game_message(id: &Uuid, game: &Game, game_state: &GameState, game_event
         event: game_event,
         players,
     };
+
     let msg = GameMessage{
         message_type: MessageType::GameEvent,
         status: "success".to_string(),

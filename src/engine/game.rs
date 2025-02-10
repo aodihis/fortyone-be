@@ -9,6 +9,7 @@ pub const MAX_PLAYER : usize = 4;
 
 #[derive(Debug)]
 pub enum GameError {
+    #[allow(dead_code)]
     InvalidPlayer,
     InvalidTurn,
     InvalidMove,
@@ -21,6 +22,7 @@ pub enum GameStatus {
     InProgress,
     Ended
 }
+#[allow(dead_code)]
 pub struct EndPhaseResponse {
     pub status: Option<GameStatus>,
     pub next_turn: u8,
@@ -171,6 +173,11 @@ impl Game {
         Ok(())
     }
 
+    pub fn scores(&self) -> Vec<i16> {
+        self.players.iter().map(|player: &Player| {player.score()}).collect()
+    }
+
+    #[allow(dead_code)]
     pub fn score(&self, player_uuid: &Uuid) -> Result<i16, GameError> {
         let index = match self.players.iter().position(|c| c.id == *player_uuid) {
             Some(i) => i,
@@ -199,6 +206,7 @@ impl Game {
         winner
     }
 
+    #[allow(dead_code)]
     pub fn current_player(&self) -> Player {
         self.players[self.current_turn].clone()
     }
