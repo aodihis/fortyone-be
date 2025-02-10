@@ -6,8 +6,7 @@ use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, State},
-    response::IntoResponse
-    ,
+    response::IntoResponse,
     Json,
 };
 use futures_util::{SinkExt, StreamExt};
@@ -64,6 +63,19 @@ enum MessageType {
     PlayerLeft,
     GameEvent,
     EndGame,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PlayerInfoData {
+    players: Vec<PlayerData>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PlayerInfoMessage {
+    message_type: MessageType,
+    status: String,
+    data: PlayerInfoData,
+    message: Option<String>
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -169,17 +181,26 @@ async fn handle_game_connection(socket: WebSocket, state: Arc<RwLock<GameManager
     {
         let mut write_state = state.write().await;
         let game_state = write_state.games.get_mut(&game_id).unwrap();
+        game_state.players.insert(player_id, (player_name.clone(), tx));
         let join_message = format!("{} joined game", player_name);
-        let join_json = GameMessage {
-            message_type: MessageType::PlayerJoin,
+        let join_json = PlayerInfoMessage {
             status: "success".to_string(),
-            data: None,
+            message_type: MessageType::PlayerJoin,
+            data: PlayerInfoData {
+                players: game_state.players.iter().map(|(k, v)| {
+                    PlayerData {
+                        name: v.0.clone(),
+                        hand: vec![],
+                        bin: vec![],
+                    }
+                }).collect(),
+            },
             message: Some(join_message),
         };
         broadcast_message(serde_json::to_string(&join_json).unwrap().to_string(), game_state).await;
 
 
-        game_state.players.insert(player_id, (player_name.clone(), tx));
+
     }
 
     while let Some(Ok(message)) = receiver.next().await {
@@ -206,11 +227,19 @@ async fn handle_game_connection(socket: WebSocket, state: Arc<RwLock<GameManager
             if let Some(game) = &mut game_state.game {
                 game.remove_player(&player_id).unwrap();
             }
-            let leave_message = format!("{} left game", player_name);
-            let leave_json = GameMessage {
+            let leave_message = format!("{} left game", player_name.clone());
+            let leave_json = PlayerInfoMessage {
                 message_type: MessageType::PlayerLeft,
                 status: "success".to_string(),
-                data: None,
+                data: PlayerInfoData {
+                    players: game_state.players.iter().map(|(k, v)| {
+                        PlayerData {
+                            name: v.0.clone(),
+                            hand: vec![],
+                            bin: vec![],
+                        }
+                    }).collect(),
+                },
                 message: Some(leave_message),
             };
             broadcast_message(serde_json::to_string(&leave_json).unwrap().to_string(), game_state).await;
