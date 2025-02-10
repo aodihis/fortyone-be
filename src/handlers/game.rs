@@ -210,7 +210,7 @@ async fn handle_game_connection(socket: WebSocket, state: Arc<RwLock<GameManager
 async fn broadcast_message(message: String, game_state: &mut GameState) {
     println!("broadcasting message: {}", message);
     for (_, (_name, tx)) in game_state.players.iter() {
-        if let Err(e) = tx.send(Message::Text(message.clone())) {
+        if let Err(e) = tx.send(Message::Text(message.clone().into())) {
             eprintln!("Error sending message: {:?}", e.to_string());
         }
     }
@@ -239,7 +239,7 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
             Some(_game) => {
                 let res = GameResponse { status: "failed".to_string() };
                 let (_, rx) = game_state.players.get_mut(&player_id).unwrap();
-                if let Err(e) = rx.send(Message::Text(serde_json::to_string(&res).unwrap())) {
+                if let Err(e) = rx.send(Message::Text(serde_json::to_string(&res).unwrap().into())) {
                     eprintln!("Error sending message: {:?}", e);
                 }
             }
@@ -347,7 +347,7 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
 fn send_failed_message(game_state: &mut GameState, player_id: &Uuid) {
     let res = GameResponse { status: "failed".to_string() };
     let (_, rx) = game_state.players.get_mut(player_id).unwrap();
-    if let Err(e) = rx.send(Message::Text(serde_json::to_string(&res).unwrap())) {
+    if let Err(e) = rx.send(Message::Text(serde_json::to_string(&res).unwrap().into())) {
         eprintln!("Error sending message: {:?}", e);
     }
 }
@@ -356,7 +356,7 @@ fn broadcast_game_message(game_state: &mut GameState, game_event: GameEvent) {
         for (id, (_name, con)) in game_state.players.iter() {
             let msg = build_game_message(id, game, game_state, game_event.clone());
 
-            if let Err(e) = con.send(Message::Text(serde_json::to_string(&msg).unwrap())) {
+            if let Err(e) = con.send(Message::Text(serde_json::to_string(&msg).unwrap().into())) {
                 eprintln!("Error sending message: {:?}", e);
             }
         }

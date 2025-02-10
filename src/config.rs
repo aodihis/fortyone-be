@@ -1,10 +1,12 @@
 
 use dotenvy::dotenv;
 use std::env;
+use std::env::VarError;
 
 #[derive(Debug)]
 pub struct Config {
     pub server_address: String,
+    pub allowed_origin: String,
 }
 
 impl Config {
@@ -14,8 +16,8 @@ impl Config {
         dotenv().ok();
 
         let server_address = env::var("SERVER_ADDRESS").expect("SERVER_ADDRESS is not set");
-        // let allowed_origin = env::var("ALLOWED_ORIGIN").unwrap_or_else(|_| "".to_string());
+        let allowed_origin = env::var("ALLOWED_ORIGIN").unwrap_or_else(|_| "*".to_string());
 
-        Self { server_address }
+        Self { server_address, allowed_origin }
     }
 }

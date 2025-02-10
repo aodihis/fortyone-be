@@ -3,7 +3,13 @@ use crate::routes::game::create_router;
 use crate::state::state::GameManager;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use axum::http::{Method};
 use tokio::sync::RwLock;
+use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use http::HeaderValue;
+use tokio::net::windows::named_pipe::PipeEnd::Server;
+use axum::{serve, ServiceExt};
+use tokio::net::TcpListener;
 
 mod engine;
 mod state;
@@ -18,13 +24,31 @@ async fn main() {
 
     let config = Config::from_env();
 
+    // let cors = if config.allowed_origin == "*" {
+    //     CorsLayer::new()
+    //         .allow_origin(tower_http::cors::Any)
+    //         .allow_credentials(true)
+    // } else {
+    //     let allowed_origin =  config.allowed_origin.parse::<HeaderValue>().unwrap();
+    //     CorsLayer::new()
+    //         .allow_origin(allowed_origin)
+    //         .allow_credentials(true)
+    // };
+
+    let allowed_origin =  config.allowed_origin.parse::<HeaderValue>().unwrap();
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_credentials(true);
+
+
     let addr: SocketAddr = config
         .server_address
         .parse()
         .expect("Invalid server address format");
-
+    let listener = TcpListener::bind(addr).await.unwrap();
     let game_state = Arc::new(RwLock::new(GameManager::new()));
-    let router = create_router(game_state);
+    let router = create_router(game_state, cors);
     println!("Listening on {}", addr);
-    axum::Server::bind(&addr).serve(router.into_make_service()).await.unwrap();
+    serve(listener, router.into_make_service()).await.unwrap();
+    // tokio::net::windows::named_pipe::PipeEnd(&addr).serve(router.into_make_service()).await.unwrap();
 }
