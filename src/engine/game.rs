@@ -6,7 +6,7 @@ use std::cmp::{max, PartialEq};
 use uuid::Uuid;
 
 pub const MAX_PLAYER : usize = 4;
-const MINIMUM_CLOSE_SCORE : i16 = 38;
+pub const MINIMUM_CLOSE_SCORE : i16 = 38;
 #[derive(Debug)]
 pub enum GameError {
     #[allow(dead_code)]
@@ -86,6 +86,7 @@ impl Game {
         }
 
         if self.players[self.current_turn].score() < MINIMUM_CLOSE_SCORE {
+            self.players[self.current_turn].hand.push(card);
             return Err(GameError::InvalidMove);
         }
 
@@ -100,9 +101,7 @@ impl Game {
     }
 
     pub fn discard(&mut self, player_uuid: &Uuid, card: Card) -> Result<EndPhaseResponse, GameError> {
-        // println!("discard: {}", self.current_turn);
         if self.players[self.current_turn].id != *player_uuid || self.phase != GamePhase::P2 {
-            // println!("{:?}, {}, {:?}", self.players[self.current_turn].id, player_uuid, self.phase);
             return Err(GameError::InvalidMove);
         }
 
@@ -146,7 +145,6 @@ impl Game {
     }
 
     pub fn draw(&mut self, player_uuid: &Uuid) -> Result<(), GameError>  {
-        // println!("Draw {}", self.current_turn);
         if self.players[self.current_turn].id != *player_uuid || self.phase != GamePhase::P1  {
             return Err(GameError::InvalidMove);
         }
@@ -277,9 +275,8 @@ impl Player {
                 Suit::Spades => {3},
             };
             points[ip] += point;
-            max_point = max(max_point, point);
+            max_point = max(max_point, points[ip]);
         }
-        // println!("max point: {}, sum: {}", max_point, points.iter().sum::<u16>());
         ((max_point as i16) *2) - points.iter().sum::<u16>() as i16
     }
 }
