@@ -6,7 +6,7 @@ use std::cmp::{max, PartialEq};
 use uuid::Uuid;
 
 pub const MAX_PLAYER : usize = 4;
-
+const MINIMUM_CLOSE_SCORE : i16 = 38;
 #[derive(Debug)]
 pub enum GameError {
     #[allow(dead_code)]
@@ -29,6 +29,7 @@ pub struct EndPhaseResponse {
     pub winner: Option<Player>
 }
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "snake_case")]
 pub enum GamePhase {
     GameEnded,
     P1,
@@ -76,12 +77,16 @@ impl Game {
     }
 
     pub fn close(&mut self, player_uuid: &Uuid, card: Card) -> Result<EndPhaseResponse, GameError> {
-        if self.players[self.current_turn].id != *player_uuid || self.phase == GamePhase::P2 {
+        if self.players[self.current_turn].id != *player_uuid || self.phase != GamePhase::P2 {
             return Err(GameError::InvalidMove);
         }
 
         if let Err(GameError::CardNotFound) = self.remove_card(&card) {
             return Err(GameError::CardNotFound);
+        }
+
+        if self.players[self.current_turn].score() < MINIMUM_CLOSE_SCORE {
+            return Err(GameError::InvalidMove);
         }
 
         self.current_turn = (self.current_turn + 1) % self.players.len();
@@ -173,6 +178,7 @@ impl Game {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn scores(&self) -> Vec<i16> {
         self.players.iter().map(|player: &Player| {player.score()}).collect()
     }

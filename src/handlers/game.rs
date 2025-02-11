@@ -42,12 +42,19 @@ struct GameRequest  {
 #[derive(Debug, Serialize, Deserialize)]
 struct GameResponse {
     status: String,
+    message_type: MessageType,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+struct EndGameScores {
+    name: String,
+    score: i16,
+    cards: Vec<String>,
+}
+#[derive(Debug, Serialize, Deserialize)]
 struct EndGameData {
     winner_name: Option<String>,
-    scores: Vec<i16>,
+    scores: Vec<EndGameScores>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -61,6 +68,7 @@ struct EndGameMessage {
 enum MessageType {
     PlayerJoin,
     PlayerLeft,
+    Reply,
     GameEvent,
     EndGame,
 }
@@ -92,7 +100,7 @@ struct GameData {
     num_of_players: u8,
     card_left: u8,
     current_turn: u8,
-    current_phase: String,
+    current_phase: GamePhase,
     event: GameEvent,
     players: Vec<PlayerData>,
 
@@ -149,12 +157,18 @@ pub async fn game(ws: WebSocketUpgrade, Path(game_id): Path<String>, Query(param
             return Err((StatusCode::BAD_REQUEST, "Game already started.").into_response());
         }
 
-         player_name = {
+        player_name = {
             match params.get("player_name") {
                 Some(name) => name.to_string(),
                 None => {format!("Player {}",game_manager.games[&game_id].players.len() )}
             }
         };
+
+        if game_manager.games[&game_id].players.values().any(|p| {
+            p.0 == player_name
+        }) {
+            return Err((StatusCode::BAD_REQUEST, "Name already taken.").into_response());
+        }
 
         if game_manager.games.get(&game_id).is_none() {
             eprintln!("Game with ID {} not found", game_id);
@@ -187,7 +201,7 @@ async fn handle_game_connection(socket: WebSocket, state: Arc<RwLock<GameManager
             status: "success".to_string(),
             message_type: MessageType::PlayerJoin,
             data: PlayerInfoData {
-                players: game_state.players.iter().map(|(k, v)| {
+                players: game_state.players.iter().map(|(_, v)| {
                     PlayerData {
                         name: v.0.clone(),
                         hand: vec![],
@@ -232,7 +246,7 @@ async fn handle_game_connection(socket: WebSocket, state: Arc<RwLock<GameManager
                 message_type: MessageType::PlayerLeft,
                 status: "success".to_string(),
                 data: PlayerInfoData {
-                    players: game_state.players.iter().map(|(k, v)| {
+                    players: game_state.players.iter().map(|(_, v)| {
                         PlayerData {
                             name: v.0.clone(),
                             hand: vec![],
@@ -250,7 +264,7 @@ async fn handle_game_connection(socket: WebSocket, state: Arc<RwLock<GameManager
 }
 
 async fn broadcast_message(message: String, game_state: &mut GameState) {
-    println!("broadcasting message: {}", message);
+    // println!("broadcasting message: {}", message);
     for (_, (_name, tx)) in game_state.players.iter() {
         if let Err(e) = tx.send(Message::Text(message.clone().into())) {
             eprintln!("Error sending message: {:?}", e.to_string());
@@ -279,7 +293,7 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
             }
 
             Some(_game) => {
-                let res = GameResponse { status: "failed".to_string() };
+                let res = GameResponse { status: "failed".to_string(), message_type: MessageType::Reply  };
                 let (_, rx) = game_state.players.get_mut(&player_id).unwrap();
                 if let Err(e) = rx.send(Message::Text(serde_json::to_string(&res).unwrap().into())) {
                     eprintln!("Error sending message: {:?}", e);
@@ -290,7 +304,7 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
     }
 
     if game_res.is_none() {
-        send_failed_message(game_state, &player_id);
+        send_failed_reply(game_state, &player_id);
         return;
     };
     let game = game_res.as_mut().unwrap();
@@ -306,7 +320,7 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
                     };
                     broadcast_game_message(game_state, game_event);
                 }
-                Err(_) => {send_failed_message(game_state, &player_id);}
+                Err(_) => { send_failed_reply(game_state, &player_id);}
             }
         },
         GameRequestAction::TakeBin => {
@@ -319,14 +333,14 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
                     };
                     broadcast_game_message(game_state, game_event);
                 }
-                Err(_) => {send_failed_message(game_state, &player_id);}
+                Err(_) => { send_failed_reply(game_state, &player_id);}
             }
         },
         GameRequestAction::Discard => {
             let card_data = match &data.card {
                 Some(card_data) => card_data,
                 None => {
-                    send_failed_message(game_state, &player_id);
+                    send_failed_reply(game_state, &player_id);
                 return;
                 }
             };
@@ -334,7 +348,7 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
                 match Card::from_string(card_data) {
                     Some(card) => card,
                     _ => {
-                        send_failed_message(game_state, &player_id);
+                        send_failed_reply(game_state, &player_id);
                         return;
                     }
                 }
@@ -359,14 +373,17 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
                         broadcast_game_message(game_state, game_event);
                     }
                 }
-                Err(_) => {send_failed_message(game_state, &player_id);}
+                Err(e) => {
+                    println!("Error discarding game: {:?}", e);
+                    send_failed_reply(game_state, &player_id);
+                }
             }
         },
         GameRequestAction::Close => {
             let card_data = match &data.card {
                 Some(card_data) => card_data,
                 None => {
-                    send_failed_message(game_state, &player_id);
+                    send_failed_reply(game_state, &player_id);
                     return;
                 }
             };
@@ -374,7 +391,7 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
                 match Card::from_string(card_data) {
                     Some(card) => card,
                     _ => {
-                        send_failed_message(game_state, &player_id);
+                        send_failed_reply(game_state, &player_id);
                         return;
                     }
                 }
@@ -391,7 +408,7 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
                     game_state.status = GameStateStatus::Finished;
                     broadcast_end_game_message(game_state);
                 }
-                Err(_) => {send_failed_message(game_state, &player_id);}
+                Err(_) => { send_failed_reply(game_state, &player_id);}
             }
         },
         _ => {}
@@ -399,8 +416,8 @@ async fn handle_game_data( state: &Arc<RwLock<GameManager>>, player_id: Uuid, ga
 }
 
 
-fn send_failed_message(game_state: &mut GameState, player_id: &Uuid) {
-    let res = GameResponse { status: "failed".to_string() };
+fn send_failed_reply(game_state: &mut GameState, player_id: &Uuid) {
+    let res = GameResponse { status: "failed".to_string(), message_type: MessageType::Reply };
     let (_, rx) = game_state.players.get_mut(player_id).unwrap();
     if let Err(e) = rx.send(Message::Text(serde_json::to_string(&res).unwrap().into())) {
         eprintln!("Error sending message: {:?}", e);
@@ -409,7 +426,13 @@ fn send_failed_message(game_state: &mut GameState, player_id: &Uuid) {
 
 fn broadcast_end_game_message(game_state: &mut GameState) {
     let game = game_state.game.as_ref().unwrap();
-    let scores = game.scores();
+    let scores = game.players.iter().map(|player|  {
+        EndGameScores {
+            name: game_state.players[&player.id].0.clone(),
+            score: player.score(),
+            cards: player.hand.iter().map(|card|card.to_string()).collect(),
+        }
+    }).collect();
     let winner = game.winner();
     let msg = EndGameMessage {
         status: "success".to_string(),
@@ -421,7 +444,7 @@ fn broadcast_end_game_message(game_state: &mut GameState) {
             }else {
                 None
             },
-            scores,
+            scores
         },
     };
 
@@ -475,11 +498,7 @@ fn build_game_message(id: &Uuid, game: &Game, game_state: &GameState, game_event
         num_of_players: game_state.players.len() as u8,
         card_left: game.card_left(),
         current_turn: game.current_turn as u8,
-        current_phase: match game.phase {
-            GamePhase::GameEnded => {"ended"}
-            GamePhase::P1 => {"p1"}
-            GamePhase::P2 => {"p2"}
-        }.to_string(),
+        current_phase: game.phase.clone(),
         event: game_event,
         players,
     };
