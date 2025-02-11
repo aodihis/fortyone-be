@@ -49,12 +49,12 @@ struct GameResponse {
 struct EndGameScores {
     name: String,
     score: i16,
-    cards: Vec<String>,
+    hand: Vec<String>,
 }
 #[derive(Debug, Serialize, Deserialize)]
 struct EndGameData {
     winner_name: Option<String>,
-    scores: Vec<EndGameScores>,
+    players: Vec<EndGameScores>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -430,7 +430,7 @@ fn broadcast_end_game_message(game_state: &mut GameState) {
         EndGameScores {
             name: game_state.players[&player.id].0.clone(),
             score: player.score(),
-            cards: player.hand.iter().map(|card|card.to_string()).collect(),
+            hand: player.hand.iter().map(|card|card.to_string()).collect(),
         }
     }).collect();
     let winner = game.winner();
@@ -444,7 +444,7 @@ fn broadcast_end_game_message(game_state: &mut GameState) {
             }else {
                 None
             },
-            scores
+            players: scores
         },
     };
 
