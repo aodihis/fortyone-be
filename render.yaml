@@ -1,5 +1,5 @@
 services:
-  - name: axum-app
+  - name: fortyone-be
     type: web
     runtime: rust
     region: oregon
