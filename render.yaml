@@ -8,4 +8,4 @@ services:
     startCommand: "./target/release/fortyone-be"
     envVars:
       - key: SERVER_ADDRESS
-        value: "127.0.0.1:3000"
+        value: "0.0.0.0:3000"
